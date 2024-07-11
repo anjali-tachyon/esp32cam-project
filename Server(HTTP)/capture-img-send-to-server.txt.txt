@@ -1,0 +1,58 @@
+
+void sendPhotoToServer() {
+  camera_fb_t * fb = esp_camera_fb_get();
+  if (!fb) {
+    Serial.println("Camera capture failed");
+    return;
+  }
+
+  Serial.println("Photo captured");
+
+  if (LED_Flash_ON) digitalWrite(FLASH_LED_PIN, HIGH);
+  delay(1000);
+
+  if (client.connect(serverName.c_str(), serverPort)) {
+    Serial.println("Connection successful!");
+
+    String head = "--dataMarker\r\nContent-Disposition: form-data; name=\"imageFile\"; filename=\"ESP32CAMCap.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
+    String boundary = "\r\n--dataMarker--\r\n";
+    uint32_t imageLen = fb->len;
+    uint32_t totalLen = head.length() + boundary.length() + imageLen;
+
+    client.println("POST " + serverPath + " HTTP/1.1");
+    client.println("Host: " + serverName);
+    client.println("Content-Length: " + String(totalLen));
+    client.println("Content-Type: multipart/form-data; boundary=dataMarker");
+    client.println();
+    client.print(head);
+
+    client.write(fb->buf, fb->len);
+    client.print(boundary);
+
+    esp_camera_fb_return(fb);
+
+    int timeout = 10000;
+    long startTimer = millis();
+    boolean state = false;
+    String response = "";
+
+    while ((startTimer + timeout) > millis()) {
+      while (client.available()) {
+        char c = client.read();
+        if (c == '\n') {
+          if (response.length() == 0) state = true;
+          response = "";
+        } else if (c != '\r') response += String(c);
+        if (state == true) break;
+        startTimer = millis();
+      }
+      if (response.length() > 0) break;
+    }
+    Serial.println(response);
+    client.stop();
+  } else {
+    Serial.println("Connection to server failed.");
+  }
+
+  if (LED_Flash_ON) digitalWrite(FLASH_LED_PIN, LOW);
+}
